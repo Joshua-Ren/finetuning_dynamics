@@ -100,6 +100,10 @@ class BasicTrainer(object):
         self.world_size = world_size
         self.config = config
         self.run_dir = run_dir
+        self.prob_dicts = ['chosen', 'chosen_initial', 'chosen_selfr', 'chosen_gptsemantic', 'chosen_gptformat',
+                 'rejected', 'reject_gptsemantic', 'reject_gptformat',
+                 'irr_train', 'irr_test', 'irr_hum',
+                 'random_permute', 'random_nonhum']
 
         tokenizer_name_or_path = \
             config.model.tokenizer_name_or_path or config.model.name_or_path
@@ -113,7 +117,6 @@ class BasicTrainer(object):
         data_iterator_kwargs = dict(
             names=config.datasets,
             tokenizer=self.tokenizer,
-            shuffle=True,
             max_length=config.max_length,
             max_prompt_length=config.max_prompt_length,
         )
@@ -123,25 +126,37 @@ class BasicTrainer(object):
 
         self.train_iterator = get_batch_iterator(
             **data_iterator_kwargs,
-            split='train',
+            split="train_dpo",
+            shuffle=True,
             n_epochs=config.n_epochs,
             n_examples=config.n_examples,
             batch_size=config.batch_size,
             silent=rank != 0,
         )
-        rank0_print(f'Loaded train data iterator')
-        self.eval_iterator = get_batch_iterator(
+        # self.train_batches = list(self.train_iterator)
+        # rank0_print(f'===========Loaded {len(self.train_batches)} train batches ')
+
+        self.probtrain_iterator = get_batch_iterator(
             **data_iterator_kwargs,
-            split='test',
-            n_examples=config.n_eval_examples,
+            split='formal_prob_train',
+            n_examples=500,
+            shuffle=False,
             batch_size=config.eval_batch_size,
             silent=rank != 0,
         )
-        self.eval_batches = list(self.eval_iterator)
-        rank0_print(
-            f'Loaded {len(self.eval_batches)} eval batches ' + \
-            f'of size {config.eval_batch_size}'
+        self.probtrain_batches = list(self.probtrain_iterator)
+        rank0_print(f'===========Loaded {len(self.probtrain_batches)} prob_train batches ')
+        
+        self.probtest_iterator = get_batch_iterator(
+            **data_iterator_kwargs,
+            split='formal_prob_test',
+            n_examples=500,
+            shuffle=False,
+            batch_size=config.eval_batch_size,
+            silent=rank != 0,
         )
+        self.probtest_batches = list(self.probtest_iterator)
+        rank0_print(f'========Loaded {len(self.probtest_batches)} prob_test batches ')
 
     def get_batch_samples(
             self, batch: Dict[str, torch.LongTensor]
@@ -187,7 +202,8 @@ class BasicTrainer(object):
         self,
         batch: Dict[str, Union[List, torch.LongTensor]],
         loss_config: DictConfig,
-        train=True
+        train=True,
+        prob_set=None
     ) -> Tuple[torch.FloatTensor, Dict[str, List]]:
         """Compute the SFT loss and other metrics for the given batch of inputs.
         """
@@ -199,32 +215,42 @@ class BasicTrainer(object):
             raise NotImplementedError(
                 f'loss {loss_config.name} not implemented'
             )
-
-        policy_chosen_logits = self.policy(
-            input_ids=batch['chosen_input_ids'],
-            attention_mask=batch['chosen_attention_mask']
-        ).logits.to(torch.float32)
-        policy_chosen_logps = _get_batch_logps(
-            policy_chosen_logits, batch['chosen_labels'],
-            average_log_prob=False
-        )
+        
+        if self.config.train_supervise=='rejected':
+            policy_chosen_logits = self.policy(
+                input_ids=batch['rejected_input_ids'],
+                attention_mask=batch['rejected_attention_mask']
+            ).logits.to(torch.float32)
+            policy_chosen_logps = _get_batch_logps(
+                policy_chosen_logits, batch['rejected_labels'],
+                average_log_prob=False
+            )
+            print('@@@@@@@@@@@ Here we will use rejected sample as y+ @@@@@@@@@@@@@@@@@@@@@')
+        else:
+            policy_chosen_logits = self.policy(
+                input_ids=batch['chosen_input_ids'],
+                attention_mask=batch['chosen_attention_mask']
+            ).logits.to(torch.float32)
+            policy_chosen_logps = _get_batch_logps(
+                policy_chosen_logits, batch['chosen_labels'],
+                average_log_prob=False
+            )
         losses = -policy_chosen_logps
         
-        with torch.no_grad():
-            for k in [
-                'rejected', 'random', 'paraphrase', 'variant', 'nonresponse'
-            ]:
-                policy_predict_logtis = self.policy(
-                    input_ids=batch[f'{k}_input_ids'],
-                    attention_mask=batch[f'{k}_attention_mask']
-                ).logits.detach().to(torch.float32)
-                policy_predict_logps = _get_batch_logps(
-                    policy_predict_logtis, batch[f'{k}_labels'],
-                    average_log_prob=False
-                )
-                del policy_predict_logtis
-                metrics[f'logps_{train_test}/{k}'] = \
-                    policy_predict_logps.cpu().numpy().tolist()
+        if prob_set is not None:
+            with torch.no_grad():
+                for k in self.prob_dicts:
+                    policy_predict_logtis = self.policy(
+                        input_ids=batch[f'{k}_input_ids'],
+                        attention_mask=batch[f'{k}_attention_mask']
+                    ).logits.detach().to(torch.float32)
+                    policy_predict_logps = _get_batch_logps(
+                        policy_predict_logtis, batch[f'{k}_labels'],
+                        average_log_prob=False
+                    )
+                    del policy_predict_logtis
+                    metrics[f'logps_{train_test}_{prob_set}/{k}'] = \
+                        policy_predict_logps.cpu().numpy().tolist()
 
         policy_chosen_logps = all_gather_if_needed(
             policy_chosen_logps.detach(), self.rank, self.world_size
@@ -239,6 +265,63 @@ class BasicTrainer(object):
             all_devices_losses.cpu().numpy().tolist()
 
         return losses.mean(), metrics
+
+    def evaluation(self, prob_set='prob_train'):
+        if prob_set.lower()=='prob_train':
+            data_batches = self.probtrain_batches
+        elif prob_set.lower()=='prob_test':
+            data_batches = self.probtest_batches
+        else:
+            raise ('only have prob_set naming prob_train or prob_test')
+
+        self.policy.eval()
+        all_eval_metrics = defaultdict(list)
+        for eval_batch in (tqdm.tqdm(data_batches, desc='Computing eval metrics') if self.rank == 0 else data_batches):
+            local_eval_batch = slice_and_move_batch_for_device(eval_batch, self.rank, self.world_size, self.rank)     
+            with torch.no_grad():
+                _, eval_metrics = self.get_batch_metrics(local_eval_batch, self.config.loss, train=False, prob_set=prob_set)                          
+            for k, v in eval_metrics.items():
+                all_eval_metrics[k].extend(v)
+        
+        # -------- Save the corresponding results
+        mean_eval_metrics = {k: sum(v) / len(v) for k, v in all_eval_metrics.items()}        
+        if self.config.wandb.enabled and self.rank == 0:
+            wandb.log(mean_eval_metrics, step=self.example_counter)
+            output_dir = os.path.join(self.config.save_path, f'{prob_set}_metrics.json')
+            self.save_metrics(output_dir, mean_eval_metrics)
+    
+    def evaluation_get_response(self, prob_set='prob_train_gen'):
+        data_iterator_kwargs = dict(
+                    names=self.config.datasets,
+                    tokenizer=self.tokenizer,
+                    max_length=self.config.max_length,
+                    max_prompt_length=self.config.max_prompt_length,
+                )
+        probtest_iterator = get_batch_iterator(
+            **data_iterator_kwargs,
+            split=prob_set,
+            n_examples=500,
+            shuffle=False,
+            batch_size=self.config.eval_batch_size,
+            silent=True,
+        )
+        data_batches = list(probtest_iterator)
+        rank0_print(f'========Loaded {len(data_batches)} prob_test batches ')
+
+        self.policy.eval()
+        all_policy_samples = []
+        for eval_batch in (tqdm.tqdm(data_batches, desc='Computing eval metrics') if self.rank == 0 else data_batches):
+            local_eval_batch = slice_and_move_batch_for_device(eval_batch, self.rank, self.world_size, self.rank)
+            with torch.no_grad():
+                policy_samples, _ = self.get_batch_samples(local_eval_batch)
+                for prompt, sample in zip(eval_batch['prompt'], policy_samples):
+                    all_policy_samples.append({'prompt':prompt, 'response':sample})
+
+        output_dir = os.path.join(self.config.save_path, f'{prob_set}_response.jsonl')
+        with open(output_dir, 'a',newline='\n') as f:
+            for i in range(len(all_policy_samples)):
+                f.write(json.dumps(all_policy_samples[i]))
+                f.write('\n')
 
     def train(self):
         """Begin either SFT or DPO training, with periodic evaluation."""
@@ -267,121 +350,14 @@ class BasicTrainer(object):
 
         for batch in self.train_iterator:
             #### BEGIN EVALUATION ####
-            if self.example_counter % self.config.eval_every == 0 and \
-                (self.example_counter > 0 or self.config.do_first_eval):
-                rank0_print(
-                    f'Running evaluation after {self.example_counter} ' + \
-                    f'train examples'
-                )
-                self.policy.eval()
-
-                all_eval_metrics = defaultdict(list)
-                if self.config.sample_during_eval:
-                    all_policy_samples, all_reference_samples = [], []
-                    policy_text_table = wandb.Table(
-                        columns=["step", "prompt", "sample"]
-                    )
-                    if self.config.loss.name in {'dpo', 'ipo'}:
-                        raise NotImplementedError('DPO/IPO are not implemented')
-
-                for eval_batch in (
-                    tqdm.tqdm(self.eval_batches, desc='Computing eval metrics')\
-                    if self.rank == 0 else self.eval_batches
-                ):
-                    local_eval_batch = slice_and_move_batch_for_device(
-                        eval_batch, self.rank, self.world_size, self.rank
-                    )
-                    with torch.no_grad():
-                        _, eval_metrics = self.get_batch_metrics(
-                            local_eval_batch, self.config.loss, train=False
-                        )
-
-                    for k, v in eval_metrics.items():
-                        all_eval_metrics[k].extend(v)
-
-                if self.config.sample_during_eval:
-                    if self.config.n_eval_model_samples < \
-                        self.config.eval_batch_size:
-                        rank0_print(
-                            f'Warning: n_eval_model_samples ' + \
-                            f'({self.config.n_eval_model_samples}) < ' + \
-                            f'eval_batch_size ({self.config.eval_batch_size}).'\
-                            + f'Sampling from the first complete eval ' + \
-                            'batch of prompts.'
-                        )
-                        sample_batches = self.eval_batches[:1]
-                    else:
-                        n_sample_batches = self.config.n_eval_model_samples //\
-                        self.config.eval_batch_size
-                        sample_batches = self.eval_batches[:n_sample_batches]
-                    for eval_batch in (
-                        tqdm.tqdm(sample_batches, desc='Generating samples...')\
-                        if self.rank == 0 else sample_batches
-                    ):
-                        local_eval_batch = slice_and_move_batch_for_device(
-                            eval_batch, self.rank, self.world_size, self.rank
-                        )
-                        policy_samples, reference_samples = \
-                            self.get_batch_samples(local_eval_batch)
-
-                        all_policy_samples.extend(policy_samples)
-                        all_reference_samples.extend(reference_samples)
-
-                        for prompt, sample in zip(
-                            eval_batch['prompt'], policy_samples
-                        ):
-                            policy_text_table.add_data(
-                                self.example_counter, prompt, sample
-                            )
-                        if self.config.loss.name in {'dpo', 'ipo'}:
-                            raise NotImplementedError(
-                                'DPO/IPO are not implemented'
-                            )
-
-                mean_eval_metrics = {
-                    k: sum(v) / len(v) for k, v in all_eval_metrics.items()
-                }
-                rank0_print(
-                    f'eval after {self.example_counter}:' + \
-                    f'{formatted_dict(mean_eval_metrics)}'
-                )
-                if self.config.sample_during_eval:
-                    rank0_print(json.dumps(all_policy_samples[:10], indent=2))
-                    if self.config.loss.name in {'dpo', 'ipo'}:
-                        raise NotImplementedError(
-                            'DPO/IPO are not implemented'
-                        )
-
-                if self.config.wandb.enabled and self.rank == 0:
-                    wandb.log(mean_eval_metrics, step=self.example_counter)
-
-                    if self.config.sample_during_eval:
-                        wandb.log(
-                            {"policy_samples": policy_text_table},
-                            step=self.example_counter
-                        )
-                        if self.config.loss.name in {'dpo', 'ipo'}:
-                            raise NotImplementedError(
-                                'DPO/IPO are not implemented'
-                            )
-
-                if self.example_counter > 0 and self.example_counter and \
-                    self.example_counter % (20 * self.config.eval_every) == 0:
-                    if self.config.debug:
-                        rank0_print('skipping save in debug mode')
-                    else:
-                        output_dir = os.path.join(
-                            self.run_dir, f'step-{self.example_counter}'
-                        )
-                        rank0_print(
-                            f'creating checkpoint to write to {output_dir}...'
-                        )
-                        self.save(output_dir, mean_eval_metrics)
+            if self.example_counter % self.config.eval_every == 0 and (self.example_counter > 0 or self.config.do_first_eval):
+                rank0_print(f'Running evaluation after {self.example_counter} ' + 'train examples')
+                self.evaluation(prob_set='prob_train')
+                self.evaluation(prob_set='prob_test')
             #### END EVALUATION ####
 
             #### BEGIN TRAINING ####
             self.policy.train()
-
             start_time = time.time()
             batch_metrics = defaultdict(list)
             for microbatch_idx in range(
@@ -457,6 +433,10 @@ class BasicTrainer(object):
             'metrics': metrics if metrics is not None else {},
         }, output_path)
 
+    def save_metrics(self, output_name=None, metrics=None):
+        with open(output_name, 'a',newline='\n') as f:
+            json.dump(metrics, f)
+
     def save(self, output_dir: Optional[str] = None, metrics: Optional[Dict] = None):
         """Save policy, optimizer, and scheduler state to disk."""
 
@@ -488,7 +468,6 @@ class BasicTrainer(object):
             'scheduler.pt',
             output_dir
         )
-
 
 class FSDPTrainer(BasicTrainer):
     def __init__(

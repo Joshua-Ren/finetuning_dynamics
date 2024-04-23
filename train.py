@@ -56,7 +56,7 @@ def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Modul
 def main(config: DictConfig):
     """Main entry point for training. Validates config, creates/initializes 
     model(s), and kicks off worker process(es).
-    """
+    """ 
 
     # Resolve hydra references, e.g. so we don't re-compute the run directory
     OmegaConf.resolve(config)
@@ -89,10 +89,15 @@ def main(config: DictConfig):
     print(f'Writing to {socket.gethostname()}:{config.local_run_dir}')
     print('=' * 80)
  
+    config.save_path = os.path.join('exp_results', config.exp_name)
+    if not os.path.exists(config.save_path):
+        os.makedirs(config.save_path)     
+
     os.environ['XDG_CACHE_HOME'] = get_local_dir(config.local_dirs)
     print('building policy')
     model_kwargs = {'device_map': 'balanced'} \
         if config.trainer == 'BasicTrainer' else {}
+    
     policy_dtype = getattr(torch, config.model.policy_dtype)
     policy = transformers.AutoModelForCausalLM.from_pretrained(
         config.model.name_or_path, cache_dir=get_local_dir(config.local_dirs), 

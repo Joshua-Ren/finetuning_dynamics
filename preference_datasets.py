@@ -58,7 +58,6 @@ def get_hh(
         ):
             data.append(json.loads(line))
     print('done')
-
     return data
 
 
@@ -71,12 +70,12 @@ def get_dataset(
     """Load the given dataset by name. Supported by default are 'shp', 'hh', and 'se'."""
     if name == 'hh':
         data = get_hh(split, silent=silent, data_dir=data_dir)
+        print("==================Got the dataset%s"%split)
     else:
         raise ValueError(f"Unknown dataset '{name}'")
-
-    assert set(data[0].keys()) == \
-        {'prompt', 'chosen', 'rejected', 'random', 'paraphrase', 'variant',
-         'nonresponse'}, f"Unexpected keys in dataset: {list(data[0].keys())}"
+    # assert set(data[0].keys()) == \
+    #     {'prompt', 'chosen', 'rejected', 'random', 'paraphrase', 'variant',
+    #      'nonresponse'}, f"Unexpected keys in dataset: {list(data[0].keys())}"
 
     return data
 
@@ -310,7 +309,7 @@ def get_batch_iterator(
                 print(f'Finished generating {n_epochs} epochs on {split} split')
             break
         if shuffle:
-            with TemporarilySeededRandom(next(permutation_seeds)):
+            with TemporarilySeededRandom(int(next(permutation_seeds))):
                 random.shuffle(flat_data)
 
         batch = []
@@ -331,7 +330,7 @@ def get_batch_iterator(
                             f'on{split} split'
                         )
                     done = True
-                    batch = []
+                batch = []
         if done:
             break
 
