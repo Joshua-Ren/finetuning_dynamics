@@ -9,7 +9,7 @@ save_path: exp_results
 batch_size: 4
 
 # the batch size during evaluation and sampling, if enabled
-eval_batch_size: 20
+eval_batch_size: 4
 
 # debug mode (disables wandb, model checkpointing, etc.)
 debug: false
@@ -72,7 +72,7 @@ max_prompt_length: 256
 n_epochs: 1
 
 # the number of examples to train for; if null, must specify n_epochs
-n_examples: null
+n_examples: 5000
 
 # the number of examples to evaluate on (and sample from, if sample_during_eval is true)
 n_eval_examples: 100
@@ -94,6 +94,8 @@ eval_every: 100
 
 # prevent wandb from logging more than once per minimum_log_interval_secs
 minimum_log_interval_secs: 1.0
+
+#pre_sft_steps: 0
 
 defaults:
 - _self_

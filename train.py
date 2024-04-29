@@ -106,17 +106,24 @@ def main(config: DictConfig):
     disable_dropout(policy)
 
     if config.loss.name in {'dpo', 'ipo'}:
-        raise NotImplementedError('DPO/IPO not yet implemented')
-    reference_model = None
+        print('building reference model')
+        reference_model_dtype = getattr(torch, config.model.reference_dtype)
+        reference_model = transformers.AutoModelForCausalLM.from_pretrained(
+            config.model.name_or_path, cache_dir=get_local_dir(config.local_dirs), low_cpu_mem_usage=True, torch_dtype=reference_model_dtype, **model_kwargs)
+        disable_dropout(reference_model)
+    else:
+        reference_model = None
 
     if config.model.archive is not None:
-        state_dict = torch.load(config.model.archive, map_location='cpu')
-        step, metrics = state_dict['step_idx'], state_dict['metrics']
-        print(
-            f'loading pre-trained weights at step {step} ' + \
-            f'from {config.model.archive} with ' + \
-            f'metrics {json.dumps(metrics, indent=2)}'
-        )
+        load_path = os.path.join('exp_results', config.model.archive, 'policy.pt')
+        state_dict = torch.load(load_path, map_location='cpu')
+        #state_dict = torch.load(config.model.archive, map_location='cpu')
+        # step, metrics = state_dict['step_idx'], state_dict['metrics']
+        # print(
+        #     f'loading pre-trained weights at step {step} ' + \
+        #     f'from {config.model.archive} with ' + \
+        #     f'metrics {json.dumps(metrics, indent=2)}'
+        # )
         policy.load_state_dict(state_dict['state'])
         if config.loss.name in {'dpo', 'ipo'}:
             reference_model.load_state_dict(state_dict['state'])
