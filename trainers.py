@@ -300,7 +300,7 @@ class BasicTrainer(object):
         train_test = 'train' if train else 'eval'
         
         if self.config.train_supervise=='rejected':
-            chosen = 'rejected'        
+            chosen = 'rejected'     
             print('@@@@@@@@@@@ Here we will use rejected sample as y+ @@@@@@@@@@@@@@@@@@@@@')
         else:
             chosen = 'chosen'  

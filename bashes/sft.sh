@@ -16,7 +16,8 @@ source /home/joshua52/projects/def-dsuth/joshua52/env_llm/bin/activate
 # 3. Go to the correct path
 cd /home/joshua52/projects/def-dsuth/joshua52/finetuning_dynamics
 
-python -u train.py model=qwen exp_name=sft_qwen05_ep10 trainer=BasicTrainer n_epochs=10 n_examples=50000
+python -u train.py model=pythia14 exp_name=sft_pythia14_ep6 trainer=BasicTrainer n_epochs=6 n_examples=30000
+#python -u train.py model=qwen exp_name=sft_qwen05_ep10 trainer=BasicTrainer n_epochs=6 n_examples=30000
 #python -u train.py model=pythia14 exp_name=pythia14_supreject_20240419 trainer=BasicTrainer n_epochs=4 train_supervise=rejected
 #python -u train.py model=pythia410m exp_name=sft_pythia410m_save_ep4 trainer=BasicTrainer n_epochs=4 n_examples=20000
 #python -u train.py model=pythia1b exp_name=sft_pythia1b_save_ep4 trainer=BasicTrainer n_epochs=2 n_examples=10000
