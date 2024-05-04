@@ -116,15 +116,16 @@ def _get_batch_logps(
 
     # dummy token; we'll ignore the losses on these tokens later
     labels[labels == -100] = 0
+    per_token_logps = torch.gather(logits.log_softmax(-1), dim=2, index=labels.unsqueeze(2)).squeeze(2)
 
-    per_token_logps = torch.gather(
-        logits.log_softmax(-1), dim=2, index=labels.unsqueeze(2)
-    ).squeeze(2)
+    # --------- Observe the argmax for each token
+    labels_argmax = torch.argmax(logits, dim=-1)
+    per_token_logps_argmax = torch.gather(logits.log_softmax(-1), dim=2, index=labels_argmax.unsqueeze(2)).squeeze(2)
 
     if average_log_prob:
-        return (per_token_logps * loss_mask).sum(-1) / loss_mask.sum(-1)
+        return (per_token_logps * loss_mask).sum(-1) / loss_mask.sum(-1), (per_token_logps_argmax * loss_mask).sum(-1) / loss_mask.sum(-1)
     else:
-        return (per_token_logps * loss_mask).sum(-1)
+        return (per_token_logps * loss_mask).sum(-1), (per_token_logps_argmax * loss_mask).sum(-1)
 
 def concatenated_inputs(batch: Dict[str, Union[List, torch.LongTensor]]) -> Dict[str, torch.LongTensor]:
     """Concatenate the chosen and rejected inputs into a single tensor.
@@ -280,7 +281,7 @@ class BasicTrainer(object):
         """
         concatenated_batch = concatenated_inputs(batch)
         all_logits = model(concatenated_batch['concatenated_input_ids'], attention_mask=concatenated_batch['concatenated_attention_mask']).logits.to(torch.float32)
-        all_logps = _get_batch_logps(all_logits, concatenated_batch['concatenated_labels'], average_log_prob=False)
+        all_logps, _ = _get_batch_logps(all_logits, concatenated_batch['concatenated_labels'], average_log_prob=False)
         chosen_logps = all_logps[:batch['chosen_input_ids'].shape[0]]
         rejected_logps = all_logps[batch['chosen_input_ids'].shape[0]:]
         return chosen_logps, rejected_logps
@@ -337,13 +338,14 @@ class BasicTrainer(object):
 
             else: #if loss_config.name == 'sft':
                 policy_chosen_logits = self.policy(batch[f'{chosen}_input_ids'], attention_mask=batch[f'{chosen}_attention_mask']).logits.to(torch.float32)
-                policy_chosen_logps = _get_batch_logps(policy_chosen_logits, batch[f'{chosen}_labels'], average_log_prob=False)
+                policy_chosen_logps, _ = _get_batch_logps(policy_chosen_logits, batch[f'{chosen}_labels'], average_log_prob=False)
 
                 losses = -policy_chosen_logps
 
             policy_chosen_logps = all_gather_if_needed(
                 policy_chosen_logps.detach(), self.rank, self.world_size
             )
+            
             metrics[f'logps_{train_test}/chosen'] = \
                 policy_chosen_logps.cpu().numpy().tolist()
 
@@ -361,13 +363,15 @@ class BasicTrainer(object):
                             input_ids=batch[f'{k}_input_ids'],
                             attention_mask=batch[f'{k}_attention_mask']
                         ).logits.detach().to(torch.float32)
-                        policy_predict_logps = _get_batch_logps(
+                        policy_predict_logps, policy_argmax_logps = _get_batch_logps(
                             policy_predict_logtis, batch[f'{k}_labels'],
                             average_log_prob=False
                         )
                         del policy_predict_logtis
                         metrics[f'logps_{train_test}_{prob_set}/{k}'] = \
                             policy_predict_logps.cpu().numpy().tolist()
+                        metrics[f'argmax_prob_logits'] = \
+                            policy_argmax_logps.cpu().numpy().tolist()
             loss_mean = 0
         return loss_mean, metrics
 
@@ -520,8 +524,9 @@ class BasicTrainer(object):
             else:
                 rank0_print(f'skipping logging after {self.example_counter} examples to avoid logging too frequently')
             #### END TRAINING ####
-        output_dir = os.path.join(self.config.save_path)
-        self.save(output_dir)
+        if self.config.save_ckp:
+            output_dir = os.path.join(self.config.save_path)
+            self.save(output_dir)
 
 
     def clip_gradient(self):

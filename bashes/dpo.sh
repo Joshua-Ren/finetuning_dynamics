@@ -17,13 +17,13 @@ source /home/joshua52/projects/def-dsuth/joshua52/env_llm/bin/activate
 cd /home/joshua52/projects/def-dsuth/joshua52/finetuning_dynamics
 
 # -------- One GPU is fine
-#python -u train.py loss=dpo loss.beta=0.1 pre_sft_steps=2000 model=pythia410m exp_name=dpo_pythia410m_sft2000 trainer=BasicTrainer n_epochs=4
-#python -u train.py loss=dpo loss.beta=0.1 pre_sft_steps=0 model=pythia410m exp_name=dpo_pythia410m_sft0 trainer=BasicTrainer n_epochs=4
+#python -u train.py loss=dpo loss.beta=0.1 model=pythia410m exp_name=dpo_pythia410m_sft2000 trainer=BasicTrainer n_epochs=4
+#python -u train.py loss=dpo loss.beta=0.1 model=pythia410m exp_name=dpo_pythia410m_sft0_observeargmax trainer=BasicTrainer n_epochs=4 n_examples=20000
 
 #python -u train.py loss=dpo loss.beta=0.1 pre_sft_steps=1000 model=pythia1b exp_name=dpo_pythia1b_sft1000 trainer=BasicTrainer n_epochs=4
 #python -u train.py loss=dpo loss.beta=0.1 pre_sft_steps=0 model=pythia1b exp_name=dpo_pythia1b_sft0 trainer=BasicTrainer n_epochs=4
 #python -u train.py loss=dpo loss.beta=0.1 pre_sft_steps=1 model=pythia14 exp_name=dpo_pythia14 trainer=BasicTrainer n_epochs=4
-python -u train.py loss=dpo loss.beta=0.1 model=qwen exp_name=dpo_qwen05_sft10 model.archive=sft_qwen05_ep10 trainer=BasicTrainer n_epochs=8 eval_batch_size=2 n_examples=40000
+python -u train.py loss=dpo loss.beta=0.1 model=qwen exp_name=dpo_qwen05_sft10_observeargmax model.archive=sft_qwen05_ep10 trainer=BasicTrainer n_epochs=8 eval_batch_size=2 n_examples=40000
 
 #python -u train.py loss=dpo loss.beta=0.1 model=pythia410m exp_name=dpo_pythia410m_sft_ep10 model.archive=sft_pythia410m_save trainer=BasicTrainer n_epochs=4 n_examples=null
 

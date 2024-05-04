@@ -30,6 +30,7 @@ wandb:
   entity: null
   project: "P5_5_dynamics"
 
+save_ckp: false
 # to create the local run directory and cache models/datasets,
 #   we will try each of these directories in order; if none exist,
 #   we will create the last one and use it

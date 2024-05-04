@@ -19,8 +19,8 @@ python -u gen_inference_samples.py model=pythia14 exp_name=gen_inference_pythia1
 python -u gen_inference_samples.py model=pythia28 exp_name=gen_inference_pythia28 max_length=400
 
 
-python -u train.py loss=dpo loss.beta=0.1 model=pythia410m exp_name=dpo_pythia410m_20240423 trainer=BasicTrainer n_epochs=4
+python -u train.py loss=dpo loss.beta=0.1 model=pythia410m exp_name=testtest trainer=BasicTrainer n_epochs=4 debug=True
+
 
 python -u train.py loss=dpo loss.beta=0.1 pre_sft_steps=2000 model=pythia410m exp_name=dpo_pythia410m_sft2000 trainer=BasicTrainer n_epochs=4
-
 python -u train.py loss=dpo loss.beta=0.1 model=pythia1b exp_name=dpo_pythia1b_sft model.archive=sft_pythia1b_save trainer=BasicTrainer n_epochs=1
