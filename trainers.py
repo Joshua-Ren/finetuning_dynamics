@@ -196,7 +196,7 @@ class BasicTrainer(object):
 
         self.train_iterator = get_batch_iterator(
             **data_iterator_kwargs,
-            split="train_dpo",
+            split=config.train_split, #"train_dpo",
             shuffle=True,
             n_epochs=config.n_epochs,
             n_examples=config.n_examples,
@@ -425,7 +425,6 @@ class BasicTrainer(object):
                 policy_samples, _ = self.get_batch_samples(local_eval_batch)
                 for prompt, sample in zip(eval_batch['prompt'], policy_samples):
                     all_policy_samples.append({'prompt':prompt, 'response':sample})
-
         output_dir = os.path.join(self.config.save_path, f'{prob_set}_response.jsonl')
         with open(output_dir, 'a',newline='\n') as f:
             for i in range(len(all_policy_samples)):

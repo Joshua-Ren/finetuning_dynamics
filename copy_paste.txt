@@ -24,3 +24,5 @@ python -u train.py loss=dpo loss.beta=0.1 model=pythia410m exp_name=testtest tra
 
 python -u train.py loss=dpo loss.beta=0.1 pre_sft_steps=2000 model=pythia410m exp_name=dpo_pythia410m_sft2000 trainer=BasicTrainer n_epochs=4
 python -u train.py loss=dpo loss.beta=0.1 model=pythia1b exp_name=dpo_pythia1b_sft model.archive=sft_pythia1b_save trainer=BasicTrainer n_epochs=1
+
+python -u gen_inference_samples.py model=qwen18 model.archive=baseline_sft_qwen18 exp_name=eval_baseline_sft_qwen18

@@ -46,8 +46,8 @@ def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Modul
         policy, config, config.seed, config.local_run_dir,
         reference_model=reference_model, rank=rank, world_size=world_size
     )
-    trainer.evaluation_get_response("prob_train_selfr")#("prob_train_gen")# 
-    trainer.evaluation_get_response("prob_test_selfr")# ("prob_test_gen")#
+    #trainer.evaluation_get_response("prob_train_selfr")#("prob_train_gen")# 
+    trainer.evaluation_get_response("prob_test_gen") #("prob_test_selfr")# 
     # trainer.train()
     # trainer.save()
 
@@ -109,13 +109,16 @@ def main(config: DictConfig):
     reference_model = None
 
     if config.model.archive is not None:
-        state_dict = torch.load(config.model.archive, map_location='cpu')
-        step, metrics = state_dict['step_idx'], state_dict['metrics']
-        print(
-            f'loading pre-trained weights at step {step} ' + \
-            f'from {config.model.archive} with ' + \
-            f'metrics {json.dumps(metrics, indent=2)}'
-        )
+        # state_dict = torch.load(config.model.archive, map_location='cpu')
+        # step, metrics = state_dict['step_idx'], state_dict['metrics']
+        load_path = os.path.join('exp_results', config.model.archive, 'policy.pt')
+        state_dict = torch.load(load_path, map_location='cpu')
+        
+        # print(
+        #     f'loading pre-trained weights at step {step} ' + \
+        #     f'from {config.model.archive} with ' + \
+        #     f'metrics {json.dumps(metrics, indent=2)}'
+        # )
         policy.load_state_dict(state_dict['state'])
         if config.loss.name in {'dpo', 'ipo'}:
             reference_model.load_state_dict(state_dict['state'])
