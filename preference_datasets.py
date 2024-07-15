@@ -67,10 +67,13 @@ def get_dataset(
         silent: bool = False,
         data_dir: str = None,
 ):
-    """Load the given dataset by name. Supported by default are 'shp', 'hh', and 'se'."""
+    """Load the given dataset by name. Supported by default are 'ultrafb', 'hh'."""
     if name == 'hh':
-        data = get_hh(split, silent=silent, data_dir=data_dir)
+        data = get_hh(split, silent=silent, data_dir='./data/helpful-base')
         print("==================Got the dataset%s"%split)
+    elif name == 'ultrafb':
+        data = get_hh(split, silent=silent, data_dir='./data/ultrafeedback')
+        print("==================Got the dataset%s"%split)        
     else:
         raise ValueError(f"Unknown dataset '{name}'")
     # assert set(data[0].keys()) == \
@@ -293,7 +296,7 @@ def get_batch_iterator(
     with TemporarilySeededRandom(seed):
         permutation_seeds = iter(np.random.randint(0, 2**32, size=1000000))
         flat_data = []
-        for name in names:
+        for name in [names]:
             truncation_mode = 'keep_end' if name == 'hh' else 'keep_start'
             for data in get_dataset(name, split, silent, data_dir):
                 flat_data.append((data, truncation_mode))

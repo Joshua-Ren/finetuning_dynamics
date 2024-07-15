@@ -17,9 +17,8 @@ debug: false
 # the port to use for FSDP
 fsdp_port: null
 
-# which dataset(s) to train on; can pass a list like datasets=[hh,shp]
-datasets:
-- hh
+# which dataset(s) to train on; can pass a list like datasets=[hh,ultrafb]
+datasets: hh
 train_split: train_dpo
 
 # which file we chose for training, we have "chosen" and "reject"
